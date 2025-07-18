@@ -11,14 +11,21 @@ const router = useRouter()
 const notification = useNotification()
 
 // check if the user already has a jwt token
-if (store.state.token) {
-  router.push("/")
+if (store.authState.token) {
+  router.push({ name: "home" })
   notification.notify({ title: "Sign up not allowed.", text: "You are already logged in." })
 }
 </script>
 <template>
-  <Content />
+  <div class="page">
+    <Content />
+  </div>
 </template>
 
 <style scoped>
+.page {
+  height: calc(100vh - 65px - 42px);
+  display: grid;
+  place-items: center;
+}
 </style>

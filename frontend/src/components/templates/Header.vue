@@ -1,7 +1,7 @@
 <script setup>
 import { ref, inject, watch } from 'vue'
 import { useNotification } from '@kyvg/vue3-notification'
-import { useRoute, useRouter, RouterView } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 
 const store = inject("store")
 const route = useRoute()
@@ -11,7 +11,7 @@ const notification = useNotification()
 
 // log out functionality
 function logOut() {
-  store.resetState()
+  store.authActions.resetAuth()
 
   // redirect the same route, this will force to reload the route
   router.go(route.fullPath)
@@ -21,18 +21,20 @@ function logOut() {
 <template>
   <header>
     <div>
-      <RouterLink to="/"><img alt="Site logo" class="logo" src="@/assets/logo.png" /></RouterLink>
+      <RouterLink :to="{ name: 'home' }">
+        <h1>EasyString</h1>
+      </RouterLink>
     </div>
     <div class="wrapper">
-      <nav v-if="store.state.token">
-        <RouterLink to="/">Home</RouterLink>
-        <RouterLink to="/account">Account</RouterLink>
+      <nav v-if="store.authState.token">
+        <RouterLink :to="{ name: 'home' }">Home</RouterLink>
+        <RouterLink :to="{ name: 'account' }">Account</RouterLink>
         <button @click="logOut">Log Out</button>
       </nav>
       <nav v-else>
-        <RouterLink to="/">Home</RouterLink>
-        <RouterLink to="/sign-up">Sign Up</RouterLink>
-        <RouterLink to="/log-in">Log In</RouterLink>
+        <RouterLink :to="{ name: 'home' }">Home</RouterLink>
+        <RouterLink :to="{ name: 'signup' }">Sign Up</RouterLink>
+        <RouterLink :to="{ name: 'login' }">Log In</RouterLink>
       </nav>
     </div>
   </header>
@@ -75,6 +77,11 @@ button {
   border-radius: 25px;
   color: #ffffff;
   cursor: pointer;
+}
+
+h1 {
+  font-weight: 700;
+  color: var(--accent);
 }
 
 @media (min-width: 768px) {

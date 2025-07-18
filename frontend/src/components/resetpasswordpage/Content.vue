@@ -3,59 +3,52 @@ import axios from 'axios'
 import { ref } from 'vue'
 import { useRouter } from "vue-router"
 import { useNotification } from "@kyvg/vue3-notification"
+import { validateEmail, validatePassword, validateOtp } from '@/utils/validation'
 
 const notification = useNotification()
 const router = useRouter()
 
+const formStep = ref('email')
+const countdown = ref(120)
+  // To store the interval ID for clearing
+let countdownInterval = null
+const isResending = ref(false)
+const isLoading = ref(false)
+
 // Form states
-const email = ref('')
-const otp = ref('')
-const password = ref({
-  pass: '',
-  confirmPass: ''
+const formState = ref({
+  email: "",
+  otp: "",
+  password: "",
+  confirmPassword: ""
 })
 
 // UI states
-const formStep = ref('email') // 'email', 'otp', 'password'
-const isLoading = ref(false)
 const errors = ref({
   email: '',
   otp: '',
   password: ''
 })
 
-// To store the interval ID for clearing
-const countdown = ref(120)
-let countdownInterval = null
-
-// handle 2 button "deactive" css, resend otp
-const isResending = ref(false)
-
-// Validation functions
-const validateEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
-const validatePassword = (password) => /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[a-zA-Z\d]{8,20}$/.test(password)
-const validateOtp = (otp) => /^\d{6}$/.test(otp)
-
 
 // Email submission
-async function handleEmailSubmit() {
+const handleEmailSubmit = async() => {
   errors.value.email = ''
 
-  if (!validateEmail(email.value)) {
+  // email validation
+  if (!validateEmail(formState.value.email)) {
     errors.value.email = 'Please enter a valid email address.'
     return
   }
 
   try {
     isLoading.value = true
-    const response = await axios.post('users/reset-password/', {
-      email: email.value
-    })
+    const { data } = await axios.post('/users/reset-password/', { email: formState.value.email })
 
-    if (response.data.message) {
+    if (data.message) {
       formStep.value = 'otp'
       notification.notify({
-          title: "OTP Sent",
+          title: data.message,
           text: "Check your email for the verification code."
         })
         // Start the OTP countdown
@@ -69,29 +62,27 @@ async function handleEmailSubmit() {
 }
 
 
-
 // OTP verification
-async function handleOtpSubmit() {
+const handleOtpSubmit = async() => {
   errors.value.otp = ''
 
-  if (!validateOtp(otp.value)) {
+  // otp validation
+  if (!validateOtp(formState.value.otp)) {
     errors.value.otp = 'Please enter a valid 6-digit code.'
     return
   }
 
   try {
     isLoading.value = true
-    const response = await axios.post("users/verify-reset-otp/", {
-      email: email.value,
-      otp: otp.value
+    const { data } = await axios.post("/users/verify-reset-otp/", {
+      email: formState.value.email,
+      otp: formState.value.otp
     })
 
     // success otp clear clearInterval
-    if (response.data.message) {
+    if (data.message) {
       formStep.value = 'password'
       clearInterval(countdownInterval)
-    } else {
-      errors.value.otp = "Network error. Please try again."
     }
   } catch (err) {
     errors.value.otp = "Invalid OTP. Please try again."
@@ -100,39 +91,39 @@ async function handleOtpSubmit() {
   }
 }
 
-
-
 // Password submission
-async function handlePasswordSubmit() {
+const handlePasswordSubmit = async() => {
   errors.value.password = ''
 
-  if (!validatePassword(password.value.pass)) {
+  // email validation
+  if (!validatePassword(formState.value.password)) {
     errors.value.password = 'Password must be 8-20 characters with uppercase, lowercase, and number.'
     return
   }
 
-  if (password.value.pass !== password.value.confirmPass) {
+  // confirm password
+  if (formState.value.password !== formState.value.confirmPassword) {
     errors.value.password = "Passwords don't match."
     return
   }
 
   try {
     isLoading.value = true
-    const response = await axios.post("users/new-password/", {
-      email: email.value,
-      otp: otp.value,
-      pass: password.value.pass
+    const { data } = await axios.post("/users/new-password/", {
+      email: formState.value.email,
+      otp: formState.value.otp,
+      password: formState.value.password
     })
 
-    if (response.data.message) {
+    if (data.message) {
       notification.notify({
-        title: "Success!",
+        title: data.message,
         text: "Password changed successfully."
       })
-      router.push("/log-in")
+      router.push({ name: "login" })
     }
   } catch (err) {
-    errors.value.password = "Failed to update password. Please try again."
+    errors.value.password = "Something went wrong! please try again after sometime."
   } finally {
     isLoading.value = false
   }
@@ -140,7 +131,7 @@ async function handlePasswordSubmit() {
 
 
 // Resends the OTP code
-async function resendCode() {
+const resendCode = async() => {
   // Reset countdown and clear previous interval
   clearInterval(countdownInterval)
 
@@ -158,7 +149,7 @@ async function resendCode() {
 }
 
 // Starts the countdown timer for OTP
-function startCountdown() {
+const startCountdown = () => {
   if (countdownInterval) {
     // Clear any existing interval
     clearInterval(countdownInterval)
@@ -176,7 +167,7 @@ function startCountdown() {
     <!-- Email Step -->
     <form @submit.prevent="handleEmailSubmit" v-if="formStep === 'email'">
       <h4>Reset Your Password</h4>
-      <input type="email" v-model.trim="email" placeholder="Your Email" required :disabled="isLoading" />
+      <input type="email" v-model.trim="formState.email" placeholder="Your Email" required :disabled="isLoading" />
       <span v-if="errors.email">● {{ errors.email }}</span>
       <button type="submit" :class="{ 'deactive' : isLoading }" :disabled="isLoading">
         {{ isLoading ? 'Sending...' : 'Send OTP' }}
@@ -185,7 +176,7 @@ function startCountdown() {
     <!-- OTP Step -->
     <form @submit.prevent="handleOtpSubmit" v-else-if="formStep === 'otp'">
       <h4>Enter Verification Code</h4>
-      <input type="text" v-model.trim="otp" placeholder="6-digit code" required :disabled="isLoading || isResending" />
+      <input type="text" v-model.trim="formState.otp" placeholder="6-digit code" required :disabled="isLoading || isResending" />
       <span v-if="errors.otp">● {{ errors.otp }}</span>
       <button type="submit" :class="{ 'deactive' : isLoading && !isResending }" :disabled="isLoading || isResending">
         {{ isLoading ? 'Verifying...' : 'Verify Code' }}
@@ -197,8 +188,8 @@ function startCountdown() {
     <!-- Password Step -->
     <form @submit.prevent="handlePasswordSubmit" v-else>
       <h4>Set New Password</h4>
-      <input type="password" v-model.trim="password.pass" placeholder="New Password" required :disabled="isLoading" />
-      <input type="password" v-model.trim="password.confirmPass" placeholder="Confirm Password" required :disabled="isLoading" />
+      <input type="password" v-model.trim="formState.password" placeholder="New Password" required :disabled="isLoading" />
+      <input type="password" v-model.trim="formState.confirmPassword" placeholder="Confirm Password" required :disabled="isLoading" />
       <span v-if="errors.password">● {{ errors.password }}</span>
       <button type="submit" :class="{ 'deactive' : isLoading }" :disabled="isLoading">
         {{ isLoading ? 'Updating...' : 'Update Password' }}

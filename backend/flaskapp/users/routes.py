@@ -3,29 +3,37 @@ import datetime
 from flaskapp.db_models import User
 from flaskapp.users.messages import send_otp
 from flaskapp import redis_client, bcrypt, db
-from flaskapp.users.utils import generate_otp
-from flaskapp.utils import login_required, logout_required
 from flask import Blueprint, jsonify, request, current_app
+from flaskapp.users.utils import generate_otp
+from flaskapp.utils import (
+	login_required, logout_required,
+	validate_request_json,
+	MAX_NAME_LENGTH, MIN_NAME_LENGTH,
+	MAX_EMAIL_LENGTH, MIN_EMAIL_LENGTH, EMAIL_REGEX,
+	OTP_LENGTH,
+	MIN_PASS_LENGTH, MAX_PASS_LENGTH, PASSWORD_REGEX
+)
 
+
+# users blueprint
 users_bp = Blueprint("users", __name__)
 
+
+# =================================================================
+# create user
 @users_bp.route("/sign-up/", methods=["POST"])
 @logout_required
-def sign_up():
-	response = request.get_json()
-	name = response.get('name')
-	email = response.get('email')
-
-	# handle empty payload
-	if not name or not email:
-		return jsonify({'error': 'Name and email are required.'}), 400
-
+@validate_request_json({
+	'name': {'required': True, 'min_len': MIN_NAME_LENGTH, 'max_len': MAX_NAME_LENGTH},
+	'email': {'required': True, 'min_len': MIN_EMAIL_LENGTH, 'max_len': MAX_EMAIL_LENGTH, 'regex': EMAIL_REGEX}
+})
+def sign_up(name_stripped, email_stripped):
 	# Check if username and email already exist
 	errors = {}
-	if User.check_name(name):
+	if User.check_name(name_stripped):
 		errors['nameStatus'] = 'Username already taken.'
 
-	if User.check_email(email):
+	if User.check_email(email_stripped):
 		errors['emailStatus'] = 'Email already taken.'
 
 	# 409 Conflict for duplicate entries
@@ -34,145 +42,155 @@ def sign_up():
 
 	# Generate OTP and send it
 	otp = generate_otp()
-	is_sent = send_otp(otp, email)
+	is_sent = send_otp(otp, email_stripped)
 
+	# email sent fail
+	if not is_sent:
+		return jsonify({"error": "Failed to send OTP."}), 500
+
+	# if otp, try after 2 minutes
+	stored_otp = redis_client.get(email_stripped)
+	if stored_otp:
+		return jsonify({"error": "Please try again after 2 minutes."}), 400
+
+	# if email sent than store the otp with email for 2 minutes
+	redis_client.setex(email_stripped, 120, otp)
+	
+	return jsonify({"message": "OTP sent to email."}), 200
+
+
+# =================================================================
+# verify signup otp and store the user in the database
+@users_bp.route('/verify/', methods=['POST'])
+@logout_required
+@validate_request_json({
+	'otp': {'required': True, 'min_len': OTP_LENGTH, 'max_len': OTP_LENGTH},
+	'name': {'required': True, 'min_len': MIN_NAME_LENGTH, 'max_len': MAX_NAME_LENGTH},
+	'email': {'required': True, 'min_len': MIN_EMAIL_LENGTH, 'max_len': MAX_EMAIL_LENGTH, 'regex': EMAIL_REGEX},
+	'password': {'required': True, 'min_len': MIN_PASS_LENGTH, 'max_len': MAX_PASS_LENGTH, 'regex': PASSWORD_REGEX}
+})
+def verify(otp_stripped, name_stripped, email_stripped, password_stripped):
+	# check stored otp for given email in redis cache
+	stored_otp = redis_client.get(email_stripped)
+
+	# check otp in redis client and if there is a otp, match with given otp
+	if not stored_otp or stored_otp != otp_stripped:
+		return jsonify({"error": "Timeout or invalid OTP."}), 400
+
+	if User.check_name(name_stripped):
+		return jsonify({"error": "Username already taken."}), 400
+
+	if User.check_email(email_stripped):
+		return jsonify({"error": "Email already taken."}), 400
+
+	# store in database
+	hashed_pass = bcrypt.generate_password_hash(password_stripped, rounds=13).decode('utf-8')
+	name_stripped = name_stripped.replace(' ', '-').lower()
+	user = User(username=name_stripped, email=email_stripped, password=hashed_pass)
+	db.session.add(user)
+	db.session.commit()
+	redis_client.delete(email_stripped)
+
+	return jsonify({"message": "Signup successful."}), 200
+
+
+# =================================================================
+# login
+@users_bp.route('/log-in/', methods=['POST'])
+@logout_required
+@validate_request_json({
+	'email': {'required': True, 'min_len': MIN_EMAIL_LENGTH, 'max_len': MAX_EMAIL_LENGTH, 'regex': EMAIL_REGEX},
+	'password': {'required': True, 'min_len': MIN_PASS_LENGTH, 'max_len': MAX_PASS_LENGTH, 'regex': PASSWORD_REGEX}
+})
+def log_in(email_stripped, password_stripped):
+	# load user
+	user = User.query.filter_by(email=email_stripped).first()
+	if not user or not bcrypt.check_password_hash(user.password, password_stripped):
+		return jsonify({"error": "Invalid credentials!"}), 400
+	
+	# create jwt token
+	token = jwt.encode(
+		{'id' : user.id, 'exp' : datetime.datetime.utcnow() + datetime.timedelta(minutes=current_app.config['JWT_TIMEOUT'])},
+		current_app.config['SECRET_KEY'], algorithm="HS256")
+
+	data = { "username": user.username, "token": token }
+
+	return jsonify(data), 200
+	
+
+# =================================================================
+# reset password
+@users_bp.route("/reset-password/", methods=["POST"])
+@logout_required
+@validate_request_json({
+	'email': {'required': True, 'min_len': MIN_EMAIL_LENGTH, 'max_len': MAX_EMAIL_LENGTH, 'regex': EMAIL_REGEX}
+})
+def reset_password(email_stripped):
+	# load user
+	user = User.query.filter_by(email=email_stripped).first()
+	if not user:
+		return jsonify({"error": "Please check your email address."}), 400
+		
+	# if otp already in cache than need to wait 2 minutes
+	stored_otp = redis_client.get(email_stripped)
+	if stored_otp:
+		return jsonify({"error": "Please try again after 2 minutes."}), 400
+
+	# Generate OTP and send it
+	otp = generate_otp()
+	is_sent = send_otp(otp, email_stripped)
 	if not is_sent:
 		return jsonify({"error": "Failed to send OTP."}), 500
 	
 	# if email sent than store the otp with email for 2 minutes
-	redis_client.setex(email, 120, otp)
+	redis_client.setex(email_stripped, 120, otp)
 
 	return jsonify({"message": "OTP sent to email."}), 200
 
 
-# verify signup otp and store the user in the database
-@users_bp.route('/verify/', methods=['POST'])
-@logout_required
-def verify():
-	response = request.get_json()
-	otp = response.get('otp')
-	name = response.get('name')
-	email = response.get('email')
-	password = response.get('password')
-
-	# handle empty payload
-	if not name or not email or not otp or not password:
-		return jsonify({'error': 'Invalid credentials!'}), 400
-
-	# check stored otp for given email in redis cache
-	stored_otp = redis_client.get(email)
-	if not stored_otp:
-		return jsonify({"error": "Timeout or invalid OTP."}), 400
-
-	if stored_otp == otp:
-		# in verification process if other user take the username
-		if not (User.check_name(name) and User.check_email(email)):
-			hashed_pass = bcrypt.generate_password_hash(password, rounds=13).decode('utf-8')
-			name = name.strip().replace(' ', '-').lower()
-			user = User(username=name, email=email, password=hashed_pass)
-			db.session.add(user)
-			db.session.commit()
-			redis_client.delete(email)
-			return jsonify({"message": "Signup successful."}), 200
-
-		# username email taken while sign up
-		return jsonify({"error": "Please check username and email again."}), 400
-
-	return jsonify({"error": "Timeout or invalid OTP."}), 400
-
-# login
-@users_bp.route('/log-in/', methods=['POST'])
-@logout_required
-def log_in():
-	response = request.get_json()
-	email = response.get('email')
-	password = response.get('password')
-
-	# handle empty payload
-	if not email or not password:
-		return jsonify({"error": "Invalid credentials!"}), 401
-
-	user = User.query.filter_by(email=email).first()
-	if user and bcrypt.check_password_hash(user.password, password):
-		token = jwt.encode(
-			{'id' : user.id, 'exp' : datetime.datetime.utcnow() + datetime.timedelta(minutes=current_app.config['JWT_TIMEOUT'])},
-			current_app.config['SECRET_KEY'], algorithm="HS256")
-		return jsonify({"token": token}), 200
-	
-	return jsonify({"error": "Invalid credentials!"}), 401
-
-
-# reset password
-@users_bp.route("/reset-password/", methods=["POST"])
-@logout_required
-def reset_password():
-	response = request.get_json()
-	email = response.get("email")
-
-	# handle empty payload
-	if not email:
-		return jsonify({"error": "Invalid credentials!"}), 400
-
-	user = User.query.filter_by(email=email).first()
-	if user:
-		# Generate OTP and send it
-		otp = generate_otp()
-		is_sent = send_otp(otp, email)
-		if not is_sent:
-			return jsonify({"error": "Failed to send OTP."}), 500
-		
-		# if email sent than store the otp with email for 2 minutes
-		redis_client.setex(email, 120, otp)
-		return jsonify({"message": "OTP sent to email."}), 200
-	
-	return jsonify({"error": "Please check your email address."}), 400
-
-
+# =================================================================
 # verify reset otp
 @users_bp.route("/verify-reset-otp/", methods=["POST"])
 @logout_required
-def verify_reset_otp():
-	response = request.get_json()
-	email = response.get("email")
-	otp = response.get("otp")
-
-	# empty payload
-	if not email or not otp:
-		return jsonify({"error": "Invalid credentials!"}), 400
-
+@validate_request_json({
+	'email': {'required': True, 'min_len': MIN_EMAIL_LENGTH, 'max_len': MAX_EMAIL_LENGTH, 'regex': EMAIL_REGEX},
+	'otp': {'required': True, 'min_len': OTP_LENGTH, 'max_len': OTP_LENGTH}
+})
+def verify_reset_otp(email_stripped, otp_stripped):
 	# check stored otp for given email in redis cache
-	stored_otp = redis_client.get(email)
-	if stored_otp and stored_otp == otp:
-		return jsonify({"message": "Otp matched."}), 200
+	stored_otp = redis_client.get(email_stripped)
+	if not stored_otp or stored_otp != otp_stripped:
+		return jsonify({"error": "Timeout or invalid OTP."}), 400
+	
+	return jsonify({"message": "Otp matched."}), 200
 
-	return jsonify({"error": "Timeout or invalid OTP."}), 400
 
+# =================================================================
 # set new password
 @users_bp.route("/new-password/", methods=["POST"])
 @logout_required
-def new_pass():
-	response = request.get_json()
-	email = response.get("email")
-	otp = response.get("otp")
-	password = response.get("pass")
-
-	# handle empty payload
-	if not email or not otp or not password:
-		return jsonify({"error": "Invalid credentials!"}), 400
-
-	# set new password
+@validate_request_json({
+	'email': {'required': True, 'min_len': MIN_EMAIL_LENGTH, 'max_len': MAX_EMAIL_LENGTH, 'regex': EMAIL_REGEX},
+	'password': {'required': True, 'min_len': MIN_PASS_LENGTH, 'max_len': MAX_PASS_LENGTH, 'regex': PASSWORD_REGEX},
+	'otp': {'required': True, 'min_len': OTP_LENGTH, 'max_len': OTP_LENGTH},
+})
+def new_pass(email_stripped, otp_stripped, password_stripped):
 	# check stored otp for given email in redis cache
-	stored_otp = redis_client.get(email)
-	if stored_otp and stored_otp == otp:	
-		user = User.query.filter_by(email=email).first()
-		hashed_pass = bcrypt.generate_password_hash(password, rounds=13).decode('utf-8')
-		user.password = hashed_pass
-		db.session.commit()
-		redis_client.delete(email)
-		return jsonify({"message": "Password changed."}), 200
+	stored_otp = redis_client.get(email_stripped)
+	if not stored_otp or stored_otp != otp_stripped:
+		return jsonify({"error": "Timeout or invalid OTP."}), 400
 
-	return jsonify({"error": "Something went wrong!"}), 400
+	# store new password in database
+	user = User.query.filter_by(email=email_stripped).first()
+	hashed_pass = bcrypt.generate_password_hash(password_stripped, rounds=13).decode('utf-8')
+	user.password = hashed_pass
+	db.session.commit()
+	redis_client.delete(email_stripped)
 
+	return jsonify({"message": "Password changed."}), 200
+
+
+# =================================================================
 # account endpoint
 @users_bp.route('/account/')
 @login_required

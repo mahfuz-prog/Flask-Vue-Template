@@ -14,10 +14,8 @@ import Footer from './components/templates/Footer.vue'
 
 <style>
 main {
-  /*full height - header height and footer height*/
-  height: calc(100vh - 65px - 42px);
-  display: grid;
-  place-items: center;
+  height: 100%;
+  width: 100%;
 }
 
 .vue-notification-group {

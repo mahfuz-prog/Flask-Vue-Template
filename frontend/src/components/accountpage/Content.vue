@@ -1,12 +1,9 @@
 <script setup>
-import axios from "axios"
 import { ref, inject } from "vue"
-import { useRouter } from "vue-router"
-import { useNotification } from "@kyvg/vue3-notification"
+
+import axios from "axios"
 
 const store = inject("store")
-const router = useRouter()
-const notification = useNotification()
 
 const user = ref({
   userName: null,
@@ -15,22 +12,16 @@ const user = ref({
 
 try {
   // get the auth header and include it
-  const data = await (await axios.get('users/account/', {
-    headers: store.getAuthorizationHeader()
-  })).data
+  const { data } = await axios.get('users/account/', {
+    headers: store.authActions.getAuthorizationHeader()
+  })
 
   // backend name.strip().replace(' ', '-').lower()
   // reverse for showing
   user.value.userName = data.name.replace(/\b\w/g, char => char.toUpperCase()).replace('-', ' ')
   user.value.email = data.email
 } catch (err) {
-  // remove the current token, redirect to login page
-  if (err.status === 401) {
-    store.resetState()
-    router.push("log-in/")
-  } else {
-    throw new Error(500)
-  }
+  throw err
 }
 </script>
 <template>

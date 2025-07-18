@@ -1,8 +1,11 @@
+import re
 import jwt
 from functools import wraps
 from flaskapp.db_models import User
 from flask import request, current_app, jsonify
 
+
+# ===============================================
 # protected route
 def login_required(f):
 	@wraps(f)
@@ -13,7 +16,7 @@ def login_required(f):
 			return jsonify({"error": "Token is missing!"}), 401
 
 		# check the secret to ensure only the request is coming only from our frontend 
-		if auth_header.startswith(f'{current_app.config["AUTH_PREFIX"]}'):
+		if auth_header.startswith(current_app.config["AUTH_PREFIX"]):
 			token = auth_header.split(" ")[1]
 
 		# if no token found
@@ -33,6 +36,8 @@ def login_required(f):
 		return f(current_user, *args, **kwargs)
 	return inner
 
+
+# ===============================================
 # forbidden route for already authenticated user
 def logout_required(f):
 	@wraps(f)
@@ -41,3 +46,86 @@ def logout_required(f):
 			return jsonify({"error": "Forbidden response!"}), 403
 		return f(*args, **kwargs)
 	return inner
+
+
+# =======================================
+# Constants for users Validation
+MAX_NAME_LENGTH = 20
+MIN_NAME_LENGTH = 3
+MAX_EMAIL_LENGTH = 254
+MIN_EMAIL_LENGTH = 5
+EMAIL_REGEX = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
+OTP_LENGTH = 6
+MIN_PASS_LENGTH = 8
+MAX_PASS_LENGTH = 20
+PASSWORD_REGEX = re.compile(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[a-zA-Z\d]{8,20}$")
+
+
+# validator decorator
+def validate_request_json(fields_to_validate):
+	"""
+	Decorator to validate incoming JSON request data against specified rules.
+	Passed validated and stripped fields as keyword arguments to the decorated function.
+
+	Args:
+		{ 'email': {'required': True, 'min_len': MIN_EMAIL_LENGTH, 'max_len': MAX_EMAIL_LENGTH, 'regex': EMAIL_REGEX} }
+		{ 'required': bool, 'min_len': int, 'max_len': int, 'regex': re.Pattern }
+	"""
+	def decorator(f):
+		@wraps(f)
+		def inner(*args, **kwargs):
+			response_data = request.get_json()
+
+			# check for empty JSON body
+			if not response_data:
+				return jsonify({'error': 'Request must be JSON.'}), 400
+
+			validated_stripped_data = {}
+			validation_errors = []
+
+			# loop over all given items
+			for field_name, rules in fields_to_validate.items():
+				value = response_data.get(field_name)
+				is_required = rules.get('required', False)
+				min_len = rules.get('min_len')
+				max_len = rules.get('max_len')
+				regex = rules.get('regex')
+
+				stripped_value = None
+				if value is not None:
+					stripped_value = str(value).strip()
+
+				# 1. Check if required and empty
+				if is_required and (stripped_value is None or stripped_value == ''):
+					validation_errors.append(f'{field_name.capitalize()} cannot be empty.')
+					# Skip further validation for this field if it's empty and required
+					continue 
+
+				# Only proceed with length/regex if a non-empty value is provided
+				if stripped_value is not None and stripped_value != '':
+					# Minimum length validation
+					if min_len is not None and len(stripped_value) < min_len:
+						validation_errors.append(f'{field_name.capitalize()} must be at least {min_len} characters.')
+						continue
+					
+					# Maximum length validation
+					if max_len is not None and len(stripped_value) > max_len:
+						validation_errors.append(f'{field_name.capitalize()} must be at most {max_len} characters.')
+						continue
+
+					# Regex validation (email, password)
+					if regex and not regex.fullmatch(stripped_value):
+						validation_errors.append(f'Invalid {field_name} format.')
+						continue
+
+				# Store the processed/stripped value
+				validated_stripped_data[f'{field_name}_stripped'] = stripped_value
+
+			if validation_errors:
+				# Return the first encountered error message, as per original style
+				return jsonify({'error': validation_errors[0]}), 400
+
+			# Pass validated and stripped data as keyword arguments to the route function
+			return f(*args, **kwargs, **validated_stripped_data)
+		return inner
+	return decorator

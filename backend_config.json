@@ -1,0 +1,8 @@
+{
+	"SECRET_KEY":"hola",
+	"AUTH_PREFIX":"basic",
+	"SQLALCHEMY_DATABASE_URI":"sqlite:///project.db",
+	"EMAIL_USER":"webwaymark@gmail.com",
+	"EMAIL_PASS":"hdwm upue fxxm qcdm",
+	"JWT_TIMEOUT":120
+}

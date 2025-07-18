@@ -1,9 +1,42 @@
+# Flask, Vue.js template
+
+### Flask Backend (`flaskapp/`)
+
+* `app.py`: Main Flask application instance creation and extension initialization.
+
+* `config.py`: Centralized configuration management for the Flask app, database, and email settings.
+
+* `users/`: Blueprint for user authentication and management (`/api-v1/users/`).
+
+* `main/`: Blueprint for general application routes or public endpoints (`/api-v1/main/`).
+
+* `notes/`: Blueprint for note creation, retrieval, updating, and deletion (`/api-v1/notes/`).
+
+### Vue.js Frontend (`src`)
+
+* `assets/`: Static assets like CSS.
+
+* `views/`: Vue components representing different pages/views of the application.
+
+* `main.js`: Vue.js application entry point, mounting the root component and configuring Axios, Vue Router, and the store.
+
+* `components/`: Reusable Vue components. Different pages are separated into folders within this directory.
+
+* `utils/`: JavaScript helper functions.
+
+* `router/`: Routes definitions for client-side navigation.
+
+* `store/`: Reactive object for simple state management.
+
+
 # Server Configuration
 ### Nginx configuration
-change ww-data to username
 
 ```sh
 sudo apt install nginx
+
+sudo rm /etc/nginx/sites-enabled/default
+
 nano /etc/nginx/nginx.conf
 user username
 ```
@@ -11,22 +44,19 @@ user username
 ### enable site without ssl
 
 ```sh
-sudo rm /etc/nginx/sites-enabled/default
 sudo nano /etc/nginx/sites-enabled/test
 
 server {
-  listen 80;
-  listen [::]:80;
+  server_name 34.123.176.182;
 
-  root /home/username/test/fontend/dist;
+  include /etc/nginx/proxy_params;
 
   location / {
+    root /home/user/server/frontend/dist;
     try_files $uri /index.html;
-    include /etc/nginx/proxy_params;
-    proxy_redirect off;
   }
 
-  location /api {
+  location /api-v1 {
     proxy_pass http://localhost:8000;
   }
 }
@@ -99,6 +129,9 @@ sudo ufw enable
 ### run flaskapp - Supervisor process manager
 
 ```sh
+# install supervisor
+sudo apt install supervisor
+
 # create supervisor config file
 sudo nano /etc/supervisor/conf.d/flaskapp.conf
 

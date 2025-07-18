@@ -2,7 +2,7 @@ import json
 import pytest
 import requests
 
-with open('../config.json', 'r') as config_file:
+with open('../frontend_config.json', 'r') as config_file:
     conf = json.load(config_file)
 
 # Fixture for the base URL of the API

@@ -1,7 +1,9 @@
 <template>
-  <div class="frame">
-    <div class="icon"></div>
-    <div class="text"></div>
+  <div class="page">
+    <div class="frame">
+      <div class="icon" />
+      <div class="text" />
+    </div>
   </div>
 </template>
 

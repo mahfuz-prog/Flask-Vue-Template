@@ -1,33 +1,42 @@
 import { reactive, readonly } from "vue"
 
 // configuration file
-// import config from '/etc/config.json'
+// import config from '/etc/frontend_config.json'
 
-// test
-import config from "../../config.json"
+// development
+import config from "../../frontend_config.json"
 
-const state = reactive({
+const authState = reactive({
 	token: localStorage.getItem('token'),
-	SERVER_ADDR: config.SERVER_ADDR
+	SERVER_ADDR: config.SERVER_ADDR,
+	FRONTEND: config.FRONTEND,
+	username: localStorage.getItem('username')
 })
 
-const updateState = (token) => {
-	state.token = token
-	localStorage.setItem('token', token)
+// --- Auth Actions Object ---
+const authActions = {
+    updateToken(token) {
+        authState.token = token
+        localStorage.setItem('token', token)
+    },
+
+    getAuthorizationHeader() {
+        return { 'Authorization': `${config.AUTH_PREFIX} ${authState.token}` }
+    },
+
+    resetAuth() {
+        authState.token = null
+        localStorage.removeItem('token')
+    }, 
+
+    setUsername(name) {
+    	authState.username = name
+    	localStorage.setItem('username', name)
+    }
 }
 
-const getAuthorizationHeader = () => {
-	return { 'Authorization': `${config.AUTH_PREFIX} ${state.token}` }
-}
-
-const resetState = () => {
-	state.token = null
-	localStorage.removeItem('token')
-}
 
 export default {
-	state: readonly(state),
-	resetState,
-	updateState,
-	getAuthorizationHeader
+	authState: readonly(authState),
+	authActions
 }

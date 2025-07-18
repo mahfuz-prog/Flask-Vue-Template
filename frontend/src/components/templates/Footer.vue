@@ -2,7 +2,7 @@
 </script>
 <template>
   <footer>
-    <p>©Copyright 2050 by nobody. All rights reversed.</p>
+    <p>©Copyright 2025 by Easy String. All rights reversed.</p>
   </footer>
 </template>
 

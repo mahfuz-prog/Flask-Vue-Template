@@ -1,12 +1,19 @@
 <script setup>
 </script>
 <template>
-  <i><h1>404 Page not found!</h1></i>
+  <div class="page">
+    <i><h1>404 Page not found!</h1></i>
+  </div>
 </template>
 
 <style scoped>
+.page {
+  height: calc(100vh - 65px - 42px);
+  display: grid;
+  place-items: center;
+}
+
 h1 {
-  color: var(--accent);
-  font-weight: 900;
+  font-weight: 700;
 }
 </style>

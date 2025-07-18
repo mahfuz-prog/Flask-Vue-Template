@@ -8,7 +8,7 @@ import { createApp } from 'vue'
 import Notifications from '@kyvg/vue3-notification'
 
 // server address
-axios.defaults.baseURL = store.state.SERVER_ADDR
+axios.defaults.baseURL = store.authState.SERVER_ADDR
 
 const app = createApp(App)
 
@@ -17,4 +17,3 @@ app.provide("store", store)
 app.use(router)
 app.use(Notifications)
 app.mount('#app')
-

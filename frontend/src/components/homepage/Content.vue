@@ -3,12 +3,11 @@ import { ref } from 'vue'
 import axios from 'axios'
 import DocumentationIcon from '../icons/IconDocumentation.vue'
 
-const data = ref("")
+const info = ref("")
 
 try {
-  data.value = await (await axios.get('/main/home/')).data
-
-  // handle error
+  const { data } = await axios.get('/main/home/')
+  info.value = data
 } catch (err) {
   // check the status code of error
   if (err.response) {
@@ -20,14 +19,14 @@ try {
 }
 </script>
 <template>
-  <div>
+  <div class="hero">
     <DocumentationIcon fill="red" />
-    <h4>{{ data }}</h4>
+    <h4>{{ info }}</h4>
   </div>
 </template>
 
 <style scoped>
-div {
+.hero {
   width: 200px;
   height: 200px;
   border-radius: 10px;

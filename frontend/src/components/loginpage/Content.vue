@@ -1,8 +1,10 @@
 <script setup>
-import axios from 'axios'
 import { ref, inject } from 'vue'
 import { useRouter } from 'vue-router'
 import { useNotification } from "@kyvg/vue3-notification"
+import { validateEmail, validatePassword } from '@/utils/validation'
+
+import axios from 'axios'
 
 const store = inject("store")
 const router = useRouter()
@@ -23,12 +25,8 @@ const errors = ref({
   general: ""
 })
 
-// Validation functions
-const validateEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
-const validatePassword = (password) => /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[a-zA-Z\d]{8,20}$/.test(password)
-
 // Handles login form submission
-async function submitForm() {
+const submitForm = async() => {
   // Clear all previous errors
   errors.value = { email: "", password: "", general: "" }
 
@@ -52,31 +50,26 @@ async function submitForm() {
   // Set loading state to true
   isLoading.value = true
   try {
-    const response = await axios.post('users/log-in/', submitValues.value)
+    const { data } = await axios.post('/users/log-in/', submitValues.value)
 
     // Update the token if successful
-    if (response.data.token) {
-      store.updateState(response.data.token)
-      notification.notify({
-        title: "Successfully logged in.",
-        text: "Now you have unlimited access."
-      })
+    store.authActions.updateToken(data.token)
+    store.authActions.setUsername(data.username)
+    notification.notify({
+      title: "Successfully logged in.",
+      text: "Now you have unlimited access."
+    })
 
-      // Redirect to account page
-      router.push("account/")
-    }
+    // Redirect to account page
+    router.push({ name: 'account' })
+
   } catch (err) {
     // Handle specific API errors
     if (err.response) {
-      if (err.response.status === 401) {
-        errors.value.general = "Invalid credentials! Please try again."
-      } else {
-        errors.value.general = "An unexpected error occurred. Please try again."
-      }
-    } else {
-      // Network error or no response from server
-      errors.value.general = "Network error. Please try again."
+      errors.value.general = "Invalid credentials! Please try again."
+      return
     }
+    errors.value.general = "An unexpected error occurred. Please try again."
   } finally {
     isLoading.value = false
   }
@@ -94,7 +87,7 @@ async function submitForm() {
       <button type="submit" :class="{ 'deactive': isLoading }" :disabled="isLoading">
         {{ isLoading ? 'Submitting...' : 'Log In' }}
       </button>
-      <button type="button" class="reset-btn" @click="router.push('reset-password/')">Reset Password</button>
+      <button type="button" class="reset-btn" @click="router.push({name: 'reset-password'})">Reset Password</button>
     </form>
   </div>
 </template>

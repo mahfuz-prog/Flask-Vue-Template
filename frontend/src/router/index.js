@@ -3,8 +3,8 @@ import HomeView from '../views/HomeView.vue'
 import SignUpView from '../views/SignUpView.vue'
 import LogInView from '../views/LogInView.vue'
 import AccountView from '../views/AccountView.vue'
-import PageNotFound from '../views/PageNotFound.vue'
 import ResetPasswordView from '../views/ResetPasswordView.vue'
+import PageNotFound from '../views/PageNotFound.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),

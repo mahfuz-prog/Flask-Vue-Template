@@ -1,8 +1,10 @@
 <script setup>
-import axios from 'axios'
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useNotification } from "@kyvg/vue3-notification"
+import { validateName, validateEmail, validatePassword, validateOtp } from '@/utils/validation'
+
+import axios from 'axios'
 
 const notification = useNotification()
 const router = useRouter()
@@ -18,6 +20,11 @@ const submitValues = ref({
 // UI states
 const formStep = ref('signup') // 'signup', 'otp'
 const isLoading = ref(false)
+const isResending = ref(false)
+const countdown = ref(120)
+let countdownInterval = null
+
+// errors
 const errors = ref({
   name: '',
   email: '',
@@ -25,34 +32,10 @@ const errors = ref({
   otp: '',
   general: ''
 })
-const countdown = ref(120)
-
-// To store the interval ID for clearing
-let countdownInterval = null
-
-
-// Allows alphanumeric characters, underscores, spaces, and hyphens.
-// Length must be between 3 and 25 characters.
-const validateName = (name) => /^[a-zA-Z0-9_\s-]{3,25}$/.test(name)
-
-// Follows a standard email format
-// Does not allow leading/trailing spaces or spaces within the local part or domain.
-const validateEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
-
-// Requires at least one lowercase letter.
-// Requires at least one uppercase letter.
-// Requires at least one digit.
-// Length must be between 8 and 20 characters.
-// Only allows alphanumeric characters.
-const validatePassword = (password) => /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[a-zA-Z\d]{8,20}$/.test(password)
-
-// Must consist of exactly 6 digits.
-const validateOtp = (otp) => /^\d{6}$/.test(otp)
-
 
 
 // Handles initial sign-up form submission
-async function handleSignUpSubmit() {
+const handleSignUpSubmit = async() => {
   // Clear all previous errors
   errors.value = { name: '', email: '', password: '', otp: '', general: '' }
 
@@ -60,7 +43,7 @@ async function handleSignUpSubmit() {
 
   // Validate all fields
   if (!validateName(submitValues.value.name)) {
-    errors.value.name = 'Only 3 - 25 characters allowed (a-Z, 0-9, _, -, space).'
+    errors.value.name = 'Only 3-20 characters (a-Z, 0-9, _, -, single space).'
     hasError = true
   }
   if (!validateEmail(submitValues.value.email)) {
@@ -79,10 +62,11 @@ async function handleSignUpSubmit() {
 
   try {
     isLoading.value = true
-    const response = await axios.post('users/sign-up/', submitValues.value)
+    const { data } = await axios.post('/users/sign-up/', submitValues.value)
 
-    if (response.data.message) {
-      formStep.value = 'otp' // Move to OTP verification step
+    if (data.message) {
+      // Move to OTP verification step
+      formStep.value = 'otp'
       notification.notify({
           title: "Please verify OTP.",
           text: "A 6-digit code has been sent to your email."
@@ -91,45 +75,41 @@ async function handleSignUpSubmit() {
       startCountdown()
     }
   } catch (err) {
-    // Handle specific API errors
-    if (err.response) {
-
-      if (err.response.status === 409) {
-        // name Conflict
-        if (err.response.data.nameStatus) {
-          errors.value.name = err.response.data.nameStatus
-        }
-
-        // email conflict
-        if (err.response.data.emailStatus) {
-          errors.value.email = err.response.data.emailStatus
-        }
-
-        // Server error or OTP sending failure
-      } else if (err.response.status === 500) {
-        errors.value.general = "Failed to send OTP. Please try again."
-        notification.notify({
-          title: "OTP Send Failed.",
-          text: "Please try submitting the form again."
-        })
-      } else {
-        errors.value.general = "An unexpected error occurred. Please try again."
+    // username or email conflict
+    if (err.response && err.response.status === 409) {
+      // name Conflict
+      if (err.response.data.nameStatus) {
+        errors.value.name = err.response.data.nameStatus
       }
-    } else {
-      // Network error or no response from server
-      errors.value.general = "Network error. Please try again."
+      // email conflict
+      if (err.response.data.emailStatus) {
+        errors.value.email = err.response.data.emailStatus
+      }
+      return
     }
+
+    // otp send fail
+    if (err.response && err.response.status === 500) {
+      errors.value.general = "Failed to send OTP. Please try again."
+      notification.notify({
+        title: "OTP Send Failed.",
+        text: "Please try submitting the form again."
+      })
+      return
+    }
+    errors.value.general = "An unexpected error occurred. Please try again."
   } finally {
     isLoading.value = false
   }
 }
 
 
-
 // Handles OTP verification form submission
-async function handleOtpSubmit() {
-  errors.value.otp = '' // Clear previous OTP error
+const handleOtpSubmit = async() => {
+  // Clear previous OTP error
+  errors.value.otp = ''
 
+  // otp validation
   if (!validateOtp(submitValues.value.otp)) {
     errors.value.otp = 'Please enter a valid 6-digit code.'
     return
@@ -137,31 +117,23 @@ async function handleOtpSubmit() {
 
   isLoading.value = true
   try {
-    const response = await axios.post('users/verify/', submitValues.value)
+    const { data } = await axios.post('/users/verify/', submitValues.value)
 
-    if (response.status === 200) {
-      notification.notify({
-          title: "Account Created 🎉",
-          text: "Now you can log in."
-        })
-        // Redirect to login page on success
-      router.push('/log-in')
-    }
+    notification.notify({
+      title: "Account Created 🎉",
+      text: "Now you can log in."
+    })
+    router.push({ name: "login" })
   } catch (err) {
-    if (err.response) {
-      errors.value.otp = "Invalid OTP. Please try again."
-    } else {
-      errors.value.otp = "Network error. Please try again."
-    }
+    errors.value.otp = "An unexpected error occurred. Please try again."
   } finally {
     isLoading.value = false
   }
 }
 
 
-
 // Resends the OTP code
-async function resendCode() {
+const resendCode = async() => {
   // Reset OTP input and error
   submitValues.value.otp = ''
   errors.value.otp = ''
@@ -170,13 +142,16 @@ async function resendCode() {
   clearInterval(countdownInterval)
   countdown.value = 120
 
+  // button loading
+  isResending.value = true
+
   // Re-trigger the initial sign-up process to send a new OTP
-  // for existing but unverified emails.
   await handleSignUpSubmit()
+  isResending.value = false
 }
 
 // Starts the countdown timer for OTP
-function startCountdown() {
+const startCountdown = () => {
   if (countdownInterval) {
     // Clear any existing interval
     clearInterval(countdownInterval)
@@ -210,10 +185,10 @@ function startCountdown() {
       <h4>Please enter the OTP from your email</h4>
       <input type="text" v-model.trim="submitValues.otp" placeholder="6-digit code" required :disabled="isLoading" />
       <span v-if="errors.otp">● {{ errors.otp }}</span>
-      <button type="submit" :class="{ 'deactive': isLoading }" :disabled="isLoading">
-        {{ isLoading ? 'Verifying...' : 'Verify' }}
+      <button type="submit" :class="{ 'deactive': isLoading && !isResending }" :disabled="isLoading">
+        {{ isLoading && !isResending ? 'Verifying...' : 'Verify' }}
       </button>
-      <button type="button" class="resend-btn" @click="resendCode" :class="{ 'deactive': isLoading }" :disabled="countdown > 0 || isLoading">
+      <button type="button" class="resend-btn" @click="resendCode" :class="{ 'deactive': isResending }" :disabled="countdown > 0 || isLoading">
         Resend Code {{ countdown > 0 ? `(${countdown})` : '' }}
       </button>
     </form>

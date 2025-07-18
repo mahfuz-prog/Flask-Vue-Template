@@ -1,7 +1,7 @@
 import json
 
-# with open('/etc/config.json', 'r') as config_file:
-with open('../config.json', 'r') as config_file:
+# with open('/etc/backend_config.json', 'r') as config_file:
+with open('../backend_config.json', 'r') as config_file:
 	conf = json.load(config_file)
 
 class Config():
